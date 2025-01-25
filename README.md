@@ -1,5 +1,11 @@
 # Pixiv Novel Saver
 
+## オリジナルからの変更(by @uz.ra)
+このスクリプトには大変助けられてたんですけど、ダウンロードが少し遅いのが不満でした。なのでAPIリクエストの部分はxargsを用いた並列処理、ファイルダウンロードはaria2cを用いて高速化しました。timeコマンドとかで測定した訳じゃないですけど、体感5倍は早くなりました。うまくいかないところとかあったら教えてください。(オリジナル版で正常にダウンロードできるけどこっちではできないよって時だけね。それ以外は多分オリジナル版の問題かCookieとかがちゃんと設定されてないかなので。)
+
+以下オリジナルと同じです。
+===================
+
 A script to save your loved novels to local disk.
 
 **Thanks to the authors for their creativity! And be sure to respect the author's work!**

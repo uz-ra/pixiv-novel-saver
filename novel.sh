@@ -42,7 +42,6 @@ declare -A API_GATEWAY_HOST
 API_GATEWAY_HOST[raw]=""
 API_GATEWAY_HOST[pixiv]="https://www.pixiv.net/"
 API_GATEWAY_HOST[pixivFANBOX]="https://api.fanbox.cc/"
-#API_GATEWAY_HOST[pixivFANBOX]="https://fanbox.pixiv.net/"
 declare -A API_GATEWAY_REFERER
 API_GATEWAY_REFERER[raw]="https://www.pixiv.net"
 API_GATEWAY_REFERER[pixiv]="https://www.pixiv.net"
@@ -96,31 +95,56 @@ invoke_curl() {
 		-H 'TE: Trailers'
 }
 
-invoke_rest_api() {
-	dbg && printdbg "> $1 $2"
+invoke_aria2c_simple_download() {
+    local uri="$1"
+    local ua="${useragent["${2:-desktop}"]}"
+    local accept="$3"
+    shift 3
 
-	declare -a extra_opts
-	local referer="${API_GATEWAY_REFERER[${1}]}"
-	local uri="${API_GATEWAY_HOST[${1}]}$2"
-	local ua="${useragent["${3:-desktop}"]}"
-
-	[[ $uri = $referer* ]] || append_to_array extra_opts -origin "$referer"
-
-	shift 3
-
-	resp=`invoke_curl -uri "$uri" -useragent "$ua" -accept "application/json" -referer "$referer" -cookie "${COOKIE}" "${extra_opts[@]}" "$@"`
-
-	dbg && echo "$resp" | jq >&2
-	echo "$resp"
+    aria2c --quiet --allow-overwrite=true --auto-file-renaming=false \
+        --max-concurrent-downloads=16 \
+        --user-agent="$ua" \
+        --header="Accept: $accept" \
+        --header="Referer: https://www.pixiv.net" \
+        --header="Cookie: ${COOKIE}" \
+        "$uri"
 }
 
-invoke_curl_simple_download() {
-	local uri="$1"
-	local ua="${useragent["${2:-desktop}"]}"
-	local accept="$3"
-	shift 3
+invoke_rest_api_parallel() {
+    local scope="$1"
+    local endpoint="$2"
+    local ua="${useragent["${3:-desktop}"]}"
+    local referer="${API_GATEWAY_REFERER[${scope}]}"
+    local uri="${API_GATEWAY_HOST[${scope}]}$endpoint"
+    local output_file="$4"
 
-	invoke_curl -uri "$uri" -useragent "${useragent["${2:-desktop}"]}" -accept "$accept" -referer "https://www.pixiv.net" -cookie "${COOKIE}" "$@"
+    declare -a extra_opts
+    [[ $uri = $referer* ]] || append_to_array extra_opts -origin "$referer"
+
+    curl --compressed -s "${EXTRA_CURL_OPTIONS[@]}" "$uri" \
+        -H "User-Agent: $ua" \
+        -H "Accept: application/json" \
+        -H "Referer: $referer" \
+        -H "Cookie: ${COOKIE}" \
+        "${extra_opts[@]}" > "$output_file"
+}
+
+invoke_rest_api() {
+    dbg && printdbg "> $1 $2"
+
+    declare -a extra_opts
+    local referer="${API_GATEWAY_REFERER[${1}]}"
+    local uri="${API_GATEWAY_HOST[${1}]}$2"
+    local ua="${useragent["${3:-desktop}"]}"
+
+    [[ $uri = $referer* ]] || append_to_array extra_opts -origin "$referer"
+
+    shift 3
+
+    resp=$(invoke_curl -uri "$uri" -useragent "$ua" -accept "application/json" -referer "$referer" -cookie "${COOKIE}" "${extra_opts[@]}" "$@")
+
+    dbg && echo "$resp" | jq >&2
+    echo "$resp"
 }
 
 date_string_to_timestamp() {
@@ -137,17 +161,17 @@ json_has_path() {
 
 json_get_object() {
 	declare -n  __msg="${3}"
-	__msg=`jq -e ".${2} // empty" <<< "${1}"`
+	__msg=$(jq -e ".${2} // empty" <<< "${1}")
 }
 
 json_get_string() {
 	declare -n  __msg="${3}"
-	__msg=`jq -e -r ".${2} // empty" <<< "${1}"`
+	__msg=$(jq -e -r ".${2} // empty" <<< "${1}")
 }
 
 json_get_integer() {
 	declare -n  __msg="${3}"
-	__msg=`jq ".${2} | tonumber" <<< "${1}"`
+	__msg=$(jq ".${2} | tonumber" <<< "${1}")
 }
 
 json_get_booleanstring() {
@@ -200,24 +224,6 @@ __pixiv_parsehdr() {
 	return 0
 }
 
-# It seems at least some pixiv.net mobile version API HAVE NOT USE isSucceed now....
-# Now comment the __pixiv_parsehdr_mobile because nobody use it.
-#__pixiv_parsehdr_mobile() {
-#	local tmp
-#	declare -n  __msg="$2"
-#
-#	if json_has "$1" isSucceed ; then
-#		if ! json_is_true "$1" isSucceed ; then
-#			__msg="server error (mobile mode)"
-#			return 1
-#		fi
-#	else
-#		__msg="network error (mobile mode)"
-#		return 1
-#	fi
-#	return 0
-#}
-
 __pixivfanbox_parsehdr() {
 	local tmp
 	declare -n  __msg="$2"
@@ -238,22 +244,17 @@ __pixivfanbox_parsehdr() {
 	return 0
 }
 
-## pixiv_errquit
-#    name - the name of "subprogram" which throw a error
 pixiv_errquit() {
 	errquit "${1}: ${pixiv_error}"
 }
 
-## pixiv_get_user_info
-#    userid - the ID of the user
-#    __meta - a pointer to recv info of the user
 pixiv_get_user_info() {
 	local userid="$1"
 	declare -n  __meta="$2"
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "ajax/user/${userid}?full=0"`
+	tmp=$(invoke_rest_api pixiv "ajax/user/${userid}?full=0")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	__meta[id]="$userid"
@@ -263,16 +264,13 @@ pixiv_get_user_info() {
 	return 0
 }
 
-## pixiv_get_series_info
-#    seriesid - the ID of the series
-#    __meta - a pointer to recv info of the series
 pixiv_get_series_info() {
 	local seriesid="$1"
 	declare -n  __meta="$2"
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "ajax/novel/series/${seriesid}"`
+	tmp=$(invoke_rest_api pixiv "ajax/novel/series/${seriesid}")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_integer "$tmp" body.userId                    __meta[authorid]
@@ -281,12 +279,6 @@ pixiv_get_series_info() {
 	return 0
 }
 
-## pixiv_list_novels_by_bookmarks
-#    userid - save bookmarks from this user.
-#    offset - from 0, the page offset.
-#    rest - 'show' for public novels or 'hide' for private novels
-#    __novels - a pointer to recv novels list for this page
-#    __total - a pointer to recv total number of novels (only when offset==0)
 pixiv_list_novels_by_bookmarks() {
 	local userid="$1"
 	local offset=$(( ${NOVELS_PER_PAGE} * ${2} ))
@@ -296,7 +288,7 @@ pixiv_list_novels_by_bookmarks() {
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "ajax/user/${userid}/novels/bookmarks?tag=&offset=${offset}&limit=${NOVELS_PER_PAGE}&rest=${rest}"`
+	tmp=$(invoke_rest_api pixiv "ajax/user/${userid}/novels/bookmarks?tag=&offset=${offset}&limit=${NOVELS_PER_PAGE}&rest=${rest}")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body.works __novels
@@ -304,11 +296,6 @@ pixiv_list_novels_by_bookmarks() {
 	return 0
 }
 
-## pixiv_list_novels_by_author
-#    userid - author userid
-#    page - the page number, from 0.
-#    __novels - a pointer to recv novels list for this page
-#    __page_number - a pointer to recv total number of novels (only when page==0)
 pixiv_list_novels_by_author() {
 	local userid="$1"
 	local page="${2}"
@@ -317,7 +304,7 @@ pixiv_list_novels_by_author() {
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "touch/ajax/user/novels?id=${userid}&p=${page}" mobile`
+	tmp=$(invoke_rest_api pixiv "touch/ajax/user/novels?id=${userid}&p=${page}" mobile)
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body.novels __novels
@@ -325,10 +312,6 @@ pixiv_list_novels_by_author() {
 	return 0
 }
 
-## pixiv_list_novels_by_bookmarks
-#    seriesid - the series ID
-#    offset - from 0, the page offset.
-#    __novels - a pointer to recv novels list for this page
 pixiv_list_novels_by_series() {
 	local seriesid="$1"
 	local offset=$(( ${NOVELS_PER_PAGE} * ${2} ))
@@ -336,18 +319,13 @@ pixiv_list_novels_by_series() {
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "ajax/novel/series_content/${seriesid}?limit=${NOVELS_PER_PAGE}&last_order=${offset}&order_by=asc"`
+	tmp=$(invoke_rest_api pixiv "ajax/novel/series_content/${seriesid}?limit=${NOVELS_PER_PAGE}&last_order=${offset}&order_by=asc")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body.seriesContents __novels
 	return 0
 }
 
-## pixivfanbox_list_post
-#    type - 'first' or 'next
-#    target - the userid while type is first, URL while type is next
-#    __items - a pointer to recv items
-#    __next_url - a pointer to recv URL for next page, blank means ending
 pixivfanbox_list_post() {
 	local scope api
 	local idtype=creatorId
@@ -374,7 +352,7 @@ pixivfanbox_list_post() {
 
 	local tmp
 
-	tmp=`invoke_rest_api "$scope" "$api"`
+	tmp=$(invoke_rest_api "$scope" "$api")
 	__pixivfanbox_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body.items items
@@ -382,10 +360,7 @@ pixivfanbox_list_post() {
 
 	return 0
 }
-## pixivfanbox_parse_post_meta
-#    data - json data
-#    __content_ - a pointer to recv content
-#    __meta_ - a pointer to recv some post infomation
+
 pixivfanbox_parse_post() {
 	local data="$1"
 	declare -n __content_="$2"
@@ -419,12 +394,12 @@ pixivfanbox_parse_post() {
 	json_get_string "$data"  updatedDatetime   __meta_[updatedDatetime]
 	json_get_string "$data"  restrictedFor     __meta_[restrictedFor]
 
-	__meta_[_lazy_tag]="-ts`date_string_to_timestamp "${__meta_[updatedDatetime]}"`"
+	__meta_[_lazy_tag]="-ts$(date_string_to_timestamp "${__meta_[updatedDatetime]}")"
 
 	if json_has "$data" tags ; then
 		json_get_object "$data" tags tags
-		ntags=`json_array_n_items "$tags"`
-		for i in `seq 0 $(( ${ntags} - 1 ))`; do
+		ntags=$(json_array_n_items "$tags")
+		for i in $(seq 0 $(( ${ntags} - 1 ))); do
 			json_array_get_string_item "$tags" "$i" tag
 			tagmeta="${tagmeta}${tag}, "
 		done
@@ -435,17 +410,13 @@ pixivfanbox_parse_post() {
 	return 0
 }
 
-## pixivfanbox_get_post
-#    id - the ID of the post
-#    __data - a pointer to recv post content
-#    __meta - a pointer to recv some post infomation
 pixivfanbox_get_post() {
 	local id="$1"
 	declare -n __data="$2"
 	declare -n __meta="$3"
 	local tmp type
 
-	tmp=`invoke_rest_api pixivFANBOX "post.info?postId=$id"`
+	tmp=$(invoke_rest_api pixivFANBOX "post.info?postId=$id")
 	__pixivfanbox_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body tmp
@@ -454,23 +425,19 @@ pixivfanbox_get_post() {
 	return $?
 }
 
-## pixiv_get_novel
-#    novelid - the ID of the novel
-#    __novel - a pointer to recv novel content
-#    __meta (optional) - a pointer to recv some novel infomation
 pixiv_get_novel() {
 	local novelid="$1"
 	declare -n  __novel="$2"
 
 	local tmp tags ntags tag tagval tagmeta
 
-	tmp=`invoke_rest_api pixiv "ajax/novel/${novelid}"`
+	tmp=$(invoke_rest_api pixiv "ajax/novel/${novelid}")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_object "$tmp" body tmp
 	json_get_string "$tmp" content __novel
 
-	__novel=`sed 's/\r*$//g' <<< "$__novel"`
+	__novel=$(sed 's/\r*$//g' <<< "$__novel")
 
 	if [ -n "$3" ]; then
 		declare -n __meta="$3"
@@ -489,8 +456,8 @@ pixiv_get_novel() {
 			tagmeta=''
 
 			json_get_object "$tmp" tags.tags tags
-			ntags=`json_array_n_items "$tags"`
-			for i in `seq 0 $(( ${ntags} - 1 ))`; do
+			ntags=$(json_array_n_items "$tags")
+			for i in $(seq 0 $(( ${ntags} - 1 ))); do
 				json_array_get_item "$tags" "$i" tag
 				json_get_string "$tag" tag tagval
 				tagmeta="${tagmeta}${tagval}, "
@@ -508,9 +475,6 @@ pixiv_get_novel() {
 	return 0
 }
 
-## pixiv_get_illust_url_original
-#    id - the id of the illust
-#    __url - a pointer to recv url string
 pixiv_get_illust_url_original() {
 	local id=(${1//-/ })
 	local index=${id[1]:-1}
@@ -519,7 +483,7 @@ pixiv_get_illust_url_original() {
 
 	local tmp
 
-	tmp=`invoke_rest_api pixiv "ajax/illust/${id[0]}/pages"`
+	tmp=$(invoke_rest_api pixiv "ajax/illust/${id[0]}/pages")
 	__pixiv_parsehdr "$tmp" pixiv_error || return 1
 
 	json_get_string "$tmp" body[${index}].urls.original __url
@@ -619,10 +583,6 @@ EXAMPLES:
 EOF
 }
 
-## write_file_atom
-#    filename - file name
-#    __kvpair - pointer to a key-value pair to write
-#    content - the content to write
 write_file_atom() {
 	local filename_real="$1"
 	declare -n __kv="$2"
@@ -630,7 +590,7 @@ write_file_atom() {
 
 	local filename="${filename_real}.tmp"
 
-	mkdir -p -- "`dirname -- "${filename_real}"`" || errquit "write_file_atom: command failed"
+	mkdir -p -- "$(dirname -- "${filename_real}")" || errquit "write_file_atom: command failed"
 
 	cat > "${filename}" <<EOF
 Saved by pixiv-novel-saver version ${SCRIPT_VERSION} (${SCRIPT_RT_OSNAME})
@@ -651,26 +611,21 @@ EOF
 	mv -- "${filename}" "${filename_real}" || errquit "write_file_atom: command failed"
 }
 
-## download_cover_image
-#    uri: image URI
-#    filename: the file to save data
 download_cover_image() {
 	[[ "${1}" == *s.pximg.net/common/* ]] && return 1
-	mkdir -p -- "`dirname -- "${2}"`"
-	invoke_curl_simple_download "${1}" desktop 'image/webp,*/*' > "${2}" || errquit "cover image download failed"
+	mkdir -p -- "$(dirname -- "${2}")"
+	invoke_aria2c_simple_download "${1}" desktop 'image/webp,*/*' > "${2}" || errquit "cover image download failed"
 	return 0
 }
 
-## download_inline_images
-#    content - the novel's content
 download_inline_images() {
 	local illust
 	local ext
 	local url=''
 	local stat='done'
 
-	for i in `grep -o -E '\[(pixiv|uploaded)image:[0-9-]+\]' <<< "$1"`; do
-		illust=`echo "$i" | cut -d : -f 2 | cut -d ] -f 1`
+	for i in $(grep -o -E '\[(pixiv|uploaded)image:[0-9-]+\]' <<< "$1"); do
+		illust=$(echo "$i" | cut -d : -f 2 | cut -d ] -f 1)
 		pixiv_get_illust_url_original "$illust" url || echo "[warning] pixiv_get_illust_url_original: $pixiv_error"
 		if [ -z "$url" ]; then
 			stat="ignored, illust may not exist or be removed"
@@ -678,18 +633,12 @@ download_inline_images() {
 			ext="${url##*.}"
 			grep -E "^[a-zA-Z0-9]+$" <<< "$ext" > /dev/null 2>&1 || ext='image'
 			mkdir -p -- "${DIR_PREFIX}/illusts/" || errquit "download_inline_images: command failed"
-			invoke_curl_simple_download "${url}" desktop 'image/webp,*/*' > "${DIR_PREFIX}/illusts/${illust}.${ext}" || errquit "inline image(s) download failed"
+			invoke_aria2c_simple_download "${url}" desktop 'image/webp,*/*' > "${DIR_PREFIX}/illusts/${illust}.${ext}" || errquit "inline image(s) download failed"
 		fi
 		echo "   => Downloading illust $illust $stat"
 	done
 }
 
-## download_fanbox_inline_stuff
-#    type - 'image', 'file' or 'embed'(not-impl)
-#    id - image id/file id
-#    info - the infomation of the inline thing (image/file/embed(not-impl))
-#    prefix - the save prefix
-#    post_id  = the id of fanbox post
 download_fanbox_inline_stuff() {
 	local type="$1"
 	local id="$2"
@@ -709,20 +658,16 @@ download_fanbox_inline_stuff() {
 
 	echo "   => Downloading $type $id (in $post_id)"
 	mkdir -p -- "${prefix}/${type}/"
-	invoke_curl_simple_download "${url}" desktop '*/*' > "${prefix}/${type}/${post_id}-${id}${name}.${ext}" || errquit "fanbox inline $type download failed"
+	invoke_aria2c_simple_download "${url}" desktop '*/*' > "${prefix}/${type}/${post_id}-${id}${name}.${ext}" || errquit "fanbox inline $type download failed"
 }
 
-## rename_check
-#    parent: parent dir
-#    check: glob expr, expect only one result
-#    should_be: when 'check' get more than 2 results, which should be kept
 rename_check() {
 	local tmp
-	local dirs=`find "$1" -maxdepth 1 -type d -name "$2" 2> /dev/null`
+	local dirs=$(find "$1" -maxdepth 1 -type d -name "$2" 2> /dev/null)
 
 	[ -n "$dirs" ] || return 0
 
-	local n=`echo "$dirs" | wc -l`
+	local n=$(echo "$dirs" | wc -l)
 
 	if [ "$n" != "1" ]; then
 		echo "[error] rename check, multiple ${2} existed, please fix it manually."
@@ -742,12 +687,6 @@ rename_check() {
 	fi
 }
 
-## prepare_filename
-#    __meta - pointer to novel_meta associative array
-#    subdir - the subdir name
-#    lazytag - add a tag to filename for lazy mode
-#    __flags - pointer to flags var
-#    __filename - pointer to recv filename
 prepare_filename() {
 	declare -n __meta="$1"
 	local sdir="$2"
@@ -785,9 +724,6 @@ prepare_filename() {
 	__filename="${DIR_PREFIX}${sdir}/${__meta[authorid]}${author}${series_dir}/${__meta[id]}${title}${lazytag}.txt"
 }
 
-## print_complete_line
-#    flags - flags of the novel/post
-#    __kv - pointer to a key-value pair to write
 print_complete_line() {
 	local flags="$1"
 	declare -n __kv="$2"
@@ -796,11 +732,6 @@ print_complete_line() {
 	printf "=> %-${_max_flag_len}s %-${_max_id_len}s '%s' %s\n" "$flags" "${__kv[id]}" "${__kv[title]}" "$author"
 }
 
-## post_novel_content_recv
-#    __meta - pointer to novel_meta associative array
-#    content - the novel content
-#    filename - pointer to recv filename
-#    __flags - pointer to flags var
 post_novel_content_recv() {
 	declare -n __meta="$1"
 	local content="$2"
@@ -825,18 +756,13 @@ post_novel_content_recv() {
 	write_file_atom "$filename" __meta "$content"
 }
 
-## post_fanbox_data_recv
-#    __meta - pointer to novel_meta associative array
-#    data - the post data, depends on __meta[type]
-#    filename - the save prefix
-#    __flags - pointer to flags var
 post_fanbox_data_recv() {
 	declare -n __meta="$1"
 	local data="$2"
 	local filename="$3"
 	declare -n __flags="$4"
 
-	local prefix=`dirname -- "$filename"`
+	local prefix=$(dirname -- "$filename")
 
 	local type blocks n item item_text item_type content tmp
 
@@ -867,10 +793,10 @@ post_fanbox_data_recv() {
 	text)
 		write_file_atom "$filename" __meta "$data"
 		;;
-	article)
+	article|image|file)
 		json_get_object "$data" blocks blocks
-		n=`json_array_n_items "$blocks"`
-		for i in `seq 0 $(( ${n} - 1 ))`; do
+		n=$(json_array_n_items "$blocks")
+		for i in $(seq 0 $(( ${n} - 1 ))); do
 			json_array_get_item "$blocks" "$i" item
 			json_get_string "$item" type item_type
 			case "$item_type" in
@@ -910,8 +836,8 @@ post_fanbox_data_recv() {
 		esac
 		json_get_string "$data" text content
 		json_get_object "$data" "${tmp}" blocks
-		n=`json_array_n_items "$blocks"`
-		for i in `seq 0 $(( ${n} - 1 ))`; do
+		n=$(json_array_n_items "$blocks")
+		for i in $(seq 0 $(( ${n} - 1 ))); do
 			json_array_get_item "$blocks" "$i" item
 			json_get_string "$item" id item_text
 			download_fanbox_inline_stuff "$type" "$item_text" "$item" "$prefix" "${__meta[id]}"
@@ -929,12 +855,6 @@ post_fanbox_data_recv() {
 	print_complete_line "$__flags" __meta
 }
 
-## download_novel
-#    subdir - the subdir name
-#    meta - pointer to novel_meta associative array
-#    lazymode - 'always', 'textcount' or 'disable'
-#    lazytag - add a tag to filename for lazy mode
-#    extra_flags - append extra flag
 download_novel() {
 	local sdir="$1"
 	declare -n meta="$2"
@@ -972,9 +892,6 @@ download_novel() {
 	fi
 }
 
-## save_id
-#    id - the novel ID
-#    type - novel (default), fanbox_post
 save_id() {
 	local id="$1"
 	local type="$2"
@@ -1015,11 +932,11 @@ save_bookmarks() {
 
 	while true ; do
 		pixiv_list_novels_by_bookmarks "$user" "$page" "$rest" works total || pixiv_errquit pixiv_list_novels_by_bookmarks
-		works_length=`json_array_n_items "$works"`
+		works_length=$(json_array_n_items "$works")
 
 		echo "[info] total: ${total}, processing page: ${page}, in this page: ${works_length}"
 
-		for i in `seq 0 $(( $works_length - 1 ))` ; do
+		for i in $(seq 0 $(( $works_length - 1 ))) ; do
 			json_array_get_item "$works" "$i" tmp
 
 			unset novel_meta
@@ -1060,11 +977,11 @@ save_author() {
 
 	while true ; do
 		pixiv_list_novels_by_author "$id" "$page_cur" works page_nember || pixiv_errquit pixiv_list_novels_by_author
-		works_length=`json_array_n_items "$works"`
+		works_length=$(json_array_n_items "$works")
 
 		echo "[info] page: $page_cur/$page_nember, in this page: ${works_length}"
 
-		for i in `seq 0 $(( $works_length - 1 ))` ; do
+		for i in $(seq 0 $(( $works_length - 1 ))) ; do
 			json_array_get_item "$works" "$i" tmp
 
 			unset novel_meta
@@ -1098,10 +1015,10 @@ save_fanbox_author() {
 
 	pixivfanbox_list_post first "$id" items next_url || pixiv_errquit pixivfanbox_list_post
 	while true ; do
-		n=`json_array_n_items "$items"`
+		n=$(json_array_n_items "$items")
 
 		echo "[info] in this page: ${n}"
-		for i in `seq 0 $(( $n - 1 ))` ; do
+		for i in $(seq 0 $(( $n - 1 ))) ; do
 			json_array_get_item "$items" "$i" tmp
 
 			unset meta
@@ -1134,11 +1051,11 @@ save_series() {
 
 	while true ; do
 		pixiv_list_novels_by_series "$id" "$page" novels || pixiv_errquit pixiv_list_novels_by_series
-		works_length=`json_array_n_items "$novels"`
+		works_length=$(json_array_n_items "$novels")
 
 		echo "[info] series page: $page, in this page: ${works_length}"
 
-		for i in `seq 0 $(( $works_length - 1 ))` ; do
+		for i in $(seq 0 $(( $works_length - 1 ))) ; do
 			json_array_get_item "$novels" "$i" tmp
 
 			unset novel_meta
@@ -1267,8 +1184,8 @@ while [ "$#" -gt 0 ]; do
 	shift
 done
 
-START_DATE=`LANG=C LANGUAGE= LC_ALL=C date -R`
-SCRIPT_RT_OSNAME=`uname -s`
+START_DATE=$(LANG=C LANGUAGE= LC_ALL=C date -R)
+SCRIPT_RT_OSNAME=$(uname -s)
 
 dbg && append_to_array EXTRA_CURL_OPTIONS -v
 
@@ -1292,17 +1209,12 @@ dbg && append_to_array EXTRA_CURL_OPTIONS -v
 
 [ "${#novels[@]}" = '0' ] || {
 	echo "[info] saving novels by ID..."
-	for i in "${novels[@]}"; do
-		save_id "${i}"
-	done
+	printf "%s\n" "${novels[@]}" | xargs -n 1 -P $(nproc) -I {} bash -c 'save_id "{}"'
 }
 
 [ "${#authors[@]}" = '0' ] || {
 	echo "[info] saving novels by author..."
-	for i in "${authors[@]}"; do
-		echo "[info] starting to save novels of author whose ID is ${i}"
-		save_author "${i}"
-	done
+	printf "%s\n" "${authors[@]}" | xargs -n 1 -P $(nproc) -I {} bash -c 'save_author "{}"'
 }
 
 [ "${#serieses[@]}" = '0' ] || {
@@ -1316,15 +1228,11 @@ dbg && append_to_array EXTRA_CURL_OPTIONS -v
 [ "${#fanbox[@]}" = '0' ] || {
 	echo "[warning] pixivFANBOX support is early experimental, there are many things not completed. If you meet a problem, please submit an issue"
 	echo "[info] saving posts by fanbox post id..."
-	for i in "${fanbox[@]}"; do
-		save_id "$i" fanbox_post
-	done
+	printf "%s\n" "${fanbox[@]}" | xargs -n 1 -P $(nproc) -I {} bash -c 'save_id "{}" fanbox_post'
 }
 
 [ "${#fanbox_authors[@]}" = '0' ] || {
 	echo "[warning] pixivFANBOX support is early experimental, there are many things not completed. If you meet a problem, please submit an issue"
 	echo "[info] saving posts by fanbox user..."
-	for i in "${fanbox_authors[@]}"; do
-		save_fanbox_author "$i"
-	done
+	printf "%s\n" "${fanbox_authors[@]}" | xargs -n 1 -P $(nproc) -I {} bash -c 'save_fanbox_author "{}"'
 }
