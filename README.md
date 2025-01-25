@@ -1,9 +1,11 @@
 # Pixiv Novel Saver
 
-## オリジナルからの変更(by @uz.ra)
+## オリジナルからの変更(by @uz.ra)😎
 このスクリプトには大変助けられてたんですけど、ダウンロードが少し遅いのが不満でした。なのでAPIリクエストの部分はxargsを用いた並列処理、ファイルダウンロードはaria2cを用いて高速化しました。timeコマンドとかで測定した訳じゃないですけど、体感5倍は早くなりました。うまくいかないところとかあったら教えてください。(オリジナル版で正常にダウンロードできるけどこっちではできないよって時だけね。それ以外は多分オリジナル版の問題かCookieとかがちゃんと設定されてないかなので。)
+This script has been a great help to me, but I was a bit dissatisfied with the download speed being somewhat slow. So, I improved it by using `xargs` for parallel processing in the API request part and `aria2c` for faster file downloads. I didn't measure it with the `time` command or anything, but it feels more than about 5 times faster now. If you encounter any issues, please let me know. (Only if it works fine with the original version but not with this one. Otherwise, it's probably an issue with the original version or maybe the Cookies or smt aren't set correctly.)
 
-以下オリジナルと同じです。
+以下オリジナルと同じです。Original descriptions below ↓
+
 ===================
 
 A script to save your loved novels to local disk.
