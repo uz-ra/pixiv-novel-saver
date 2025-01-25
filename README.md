@@ -1,7 +1,6 @@
 # Pixiv Novel Saver
 
 ## オリジナルからの変更(by @uz.ra)😎
-このスクリプトには大変助けられてたんですけど、ダウンロードが少し遅いのが不満でした。
 
 このスクリプトには大変助けられてたんですけど、ダウンロードが少し遅いのが不満でした。
 
@@ -15,11 +14,17 @@
 （※オリジナル版で正常にダウンロードできるけど、こっちではできないよって時だけね。それ以外は多分オリジナル版の問題か、Cookieとかがちゃんと設定されてないかなので。）
 
 
-This script has been a great help to me, but I was a bit dissatisfied with the download speed being somewhat slow. 
+This script has been a great help to me, but I was a bit dissatisfied with the download speed being somewhat slow.
 
-So, I improved it by using `xargs` for parallel processing in the API request part and `aria2c` for faster file downloads. I didn't measure it with the `time` command or anything, but it feels more than about 5 times faster now. 
+So, I improved it by:
+- Using `xargs` for parallel processing in the** API request** part
+- Using `aria2c`*for faster **file downloads**
 
-If you encounter any issues, please let me know. (Only if it works fine with the original version but not with this one. Otherwise, it's probably an issue with the original version or maybe the Cookies or smt aren't set correctly.)
+I didn't measure it with the `time` command or anything, but it feels **more than about 5 times faster now**.
+
+If you encounter any issues, please let me know.
+(※Only if it works fine with the original version but not with this one. Otherwise, it's probably an issue with the original version or maybe the **Cookies** or something aren't set correctly.)
+
 
 以下オリジナルと同じです。
 
