@@ -27,21 +27,21 @@ If you encounter any issues, please let me know.
 
 
 
-ちなみに余談なんですけど、iOS（脱獄済でしかできないんだけどね、多分）でCookie抽出しようとするとだいぶ悪戦すると思います（自分もした)
 
+ちなみに余談なんですけど、iOS（脱獄済でしかできないんだけどね、多分）でCookie抽出しようとするとだいぶ悪戦すると思います（自分もした)。
 なので、上手くいった方法をチラ裏しときますね。
 
 0. **[CookiesTool](https://github.com/Lessica/CookiesTool) をインストールしておく**  
    （ちなみに[uz.raのリポジトリ](https://uz-ra.github.io)からもインストールできます。そっちの方が楽かな？）
 1. **Safariで[Pixiv](https://pixiv.net)にログイン**
 2. **Safariのアプリデータから`Cookies.binarycookies`を引っこ抜く**  
-   （適当なディレクトリにコピーしといて。例: `/var/mobile/`とか）
+   （Filzaとか使ってがんばれ😎適当なディレクトリにコピーしといて。例: `/var/mobile/`とか）
 3. **`CookiesTool`でCookieを抽出**  
-   （さっき`/var/mobile/`に置いたなら、`CookiesTool /var/mobile/Cookies.binarycookies > Cookies.txt`）
-4. **`Cookies.txt`で`PHPSESSID`とか検索かけて、`pixiv.net`のものを見つけだす**
+   （さっき`/var/mobile/`に置いたなら、`CookiesTool /var/mobile/Cookies.binarycookies > Cookies.txt`をターミナルで実行）
+4. **`Cookies.txt`で`PHPSESSID`と検索かけて、`pixiv.net`のそれを見つけだす**
 5. **このスクリプトの`config`ファイルに書き込む**  
    （詳しくはオリジナルの説明参照）
-6. **`Cookies.binarycookies`とか`Cookies.txt`は不要なら削除**
+6. **`Cookies.binarycookies`と`Cookies.txt`は不要なら削除**
 
 
 以下オリジナルと同じです。
