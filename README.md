@@ -17,7 +17,7 @@
 This script has been a great help to me, but I was a bit dissatisfied with the download speed being somewhat slow.
 
 So, I improved it by:
-- Using `xargs` for parallel processing in the** API request** part
+- Using `xargs` for parallel processing in the **API request** part
 - Using `aria2c`*for faster **file downloads**
 
 I didn't measure it with the `time` command or anything, but it feels **more than about 5 times faster now**.
