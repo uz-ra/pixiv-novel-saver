@@ -6,7 +6,14 @@
 
 なので、以下の改善を行いました：
 - **APIリクエスト**の部分は `xargs` を用いた並列処理　(並列処理数はCPU依存、書き換えで固定もできるよ)
-- **ファイルダウンロード**は `aria2c` を用いて高速化　(最大接続数は16にしたんだけどもしかするとまずったかも)
+- **ファイルダウンロード**は `aria2c` を用いて高速化　(XxFASTxXで廃止)
+- **小説データ処理**に使われる `jq` も並列処理で早く
+
+
+**Q. XxFASTxXとの違いは何？
+A. XxFASTxXは小説の更新に対する対応を犠牲にすることで大幅な速度上昇(1.5倍以上)を実現。あと、 `-P` オプションで並列処理の数を指定可能に。
+
+
 
 `time` コマンドなどで測定したわけではないですが、体感で **5倍は早くなりました**。
 
@@ -18,7 +25,7 @@ This script has been a great help to me, but I was a bit dissatisfied with the d
 
 So, I improved it by:
 - Using `xargs` for parallel processing in the **API request** part
-- Using `aria2c`*for faster **file downloads**
+- Using `aria2c` for faster **file downloads**
 
 I didn't measure it with the `time` command or anything, but it feels **more than about 5 times faster now**.
 
